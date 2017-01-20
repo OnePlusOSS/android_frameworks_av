@@ -49,6 +49,7 @@
 namespace android {
 
 extern volatile int32_t gLogLevel;
+extern char gClientPackageName[50];
 
 class MemoryHeapBase;
 class MediaPlayer;
