@@ -455,6 +455,7 @@ public:
     // frameworks/base/include/camera/Camera.h.
     // Example: "176x144,1280x720". Read only.
     static const char KEY_SUPPORTED_VIDEO_SIZES[];
+    static const char KEY_SUPPORTED_VIDEO_SIZES_60FPS[];
 
     // The maximum number of detected faces supported by hardware face
     // detection. If the value is 0, hardware face detection is not supported.
@@ -682,6 +683,7 @@ public:
     static const char LIGHTFX_LOWLIGHT[];
     // High-dynamic range mode
     static const char LIGHTFX_HDR[];
+    static const char CLIENT_PACKAGE_NAME[];
 
     /**
      * Returns the the supported preview formats as an enum given in graphics.h

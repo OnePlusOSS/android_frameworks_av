@@ -49,6 +49,7 @@
 namespace android {
 
 extern volatile int32_t gLogLevel;
+extern char gClientPackageName[50];
 
 class MemoryHeapBase;
 class MediaPlayer;
@@ -826,6 +827,11 @@ binder::Status CameraService::connectHelper(const sp<CALLBACK>& cameraCb, const 
     String8 clientName8(clientPackageName);
 
     int originalClientPid = 0;
+
+    //if the upper layer does not assign HAL version with API 1, then set HAL1 by default
+    if (effectiveApiLevel == API_1 && halVersion== CAMERA_HAL_API_VERSION_UNSPECIFIED) {
+        halVersion = CAMERA_DEVICE_API_VERSION_1_0;
+    }
 
     ALOGI("CameraService::connect call (PID %d \"%s\", camera ID %s) for HAL version %s and "
             "Camera API version %d", clientPid, clientName8.string(), cameraId.string(),
