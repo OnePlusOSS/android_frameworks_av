@@ -253,6 +253,7 @@ protected:
 
     virtual PortMode getPortMode(OMX_U32 portIndex);
 
+    virtual void stateExited();
     virtual bool onMessageReceived(const sp<AMessage> &msg);
 
     virtual bool onOMXEvent(OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2);
@@ -548,13 +549,14 @@ ACodec::ACodec()
       mRepeatFrameDelayUs(-1ll),
       mMaxPtsGapUs(-1ll),
       mMaxFps(-1),
-      mTimePerFrameUs(-1ll),
-      mTimePerCaptureUs(-1ll),
+      mFps(-1.0),
+      mCaptureFps(-1.0),
       mCreateInputBuffersSuspended(false),
       mLatency(0),
       mTunneled(false),
       mDescribeColorAspectsIndex((OMX_INDEXTYPE)0),
       mDescribeHDRStaticInfoIndex((OMX_INDEXTYPE)0),
+      mStateGeneration(0),
       mVendorExtensionsStatus(kExtensionsUnchecked) {
     mUninitializedState = new UninitializedState(this);
     mLoadedState = new LoadedState(this);
@@ -1808,8 +1810,8 @@ status_t ACodec::configureCodec(
             mMaxFps = -1;
         }
 
-        if (!msg->findInt64("time-lapse", &mTimePerCaptureUs)) {
-            mTimePerCaptureUs = -1ll;
+        if (!msg->findDouble("time-lapse-fps", &mCaptureFps)) {
+            mCaptureFps = -1.0;
         }
 
         if (!msg->findInt32(
@@ -3756,17 +3758,18 @@ status_t ACodec::setupVideoEncoder(
 
     def.nBufferSize = (video_def->nStride * video_def->nSliceHeight * 3) / 2;
 
-    float frameRate;
-    if (!msg->findFloat("frame-rate", &frameRate)) {
+    float framerate;
+    if (!msg->findFloat("frame-rate", &framerate)) {
         int32_t tmp;
         if (!msg->findInt32("frame-rate", &tmp)) {
             return INVALID_OPERATION;
         }
-        frameRate = (float)tmp;
-        mTimePerFrameUs = (int64_t) (1000000.0f / frameRate);
+        mFps = (double)tmp;
+    } else {
+        mFps = (double)framerate;
     }
 
-    video_def->xFramerate = (OMX_U32)(frameRate * 65536.0f);
+    video_def->xFramerate = (OMX_U32)(mFps * 65536);
     video_def->eCompressionFormat = OMX_VIDEO_CodingUnused;
     // this is redundant as it was already set up in setVideoPortFormatType
     // FIXME for now skip this only for flexible YUV formats
@@ -5352,6 +5355,10 @@ ACodec::BaseState::PortMode ACodec::BaseState::getPortMode(
     return KEEP_BUFFERS;
 }
 
+void ACodec::BaseState::stateExited() {
+    ++mCodec->mStateGeneration;
+}
+
 bool ACodec::BaseState::onMessageReceived(const sp<AMessage> &msg) {
     switch (msg->what()) {
         case kWhatInputBufferFilled:
@@ -5425,6 +5432,12 @@ bool ACodec::BaseState::onMessageReceived(const sp<AMessage> &msg) {
             ALOGE_IF("[%s] failed to release codec instance: err=%d",
                        mCodec->mComponentName.c_str(), err);
             mCodec->mCallback->onReleaseCompleted();
+            break;
+        }
+
+        case ACodec::kWhatForceStateTransition:
+        {
+            ALOGV("Already transitioned --- ignore");
             break;
         }
 
@@ -6338,7 +6351,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     AString mime;
 
     AString componentName;
-    uint32_t quirks = 0;
     int32_t encoder = false;
     if (msg->findString("componentName", &componentName)) {
         sp<IMediaCodecList> list = MediaCodecList::getInstance();
@@ -6374,7 +6386,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
     for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
             ++matchIndex) {
         componentName = matchingCodecs[matchIndex];
-        quirks = MediaCodecList::getQuirksFor(componentName.c_str());
 
         pid_t tid = gettid();
         int prevPriority = androidGetThreadPriority(tid);
@@ -6431,7 +6442,6 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         mCodec->mFlags |= kFlagPushBlankBuffersToNativeWindowOnShutdown;
     }
 
-    omxNode->setQuirks(quirks);
     mCodec->mOMX = omx;
     mCodec->mOMXNode = omxNode;
     mCodec->mCallback->onComponentAllocated(mCodec->mComponentName.c_str());
@@ -6639,11 +6649,10 @@ status_t ACodec::LoadedState::setupInputSurface() {
         }
     }
 
-    if (mCodec->mTimePerCaptureUs > 0ll
-            && mCodec->mTimePerFrameUs > 0ll) {
+    if (mCodec->mCaptureFps > 0. && mCodec->mFps > 0.) {
         err = statusFromBinderStatus(
                 mCodec->mGraphicBufferSource->setTimeLapseConfig(
-                        mCodec->mTimePerFrameUs, mCodec->mTimePerCaptureUs));
+                        mCodec->mFps, mCodec->mCaptureFps));
 
         if (err != OK) {
             ALOGE("[%s] Unable to configure time lapse (err %d)",
@@ -7030,7 +7039,6 @@ void ACodec::ExecutingState::resume() {
 
 void ACodec::ExecutingState::stateEntered() {
     ALOGV("[%s] Now Executing", mCodec->mComponentName.c_str());
-
     mCodec->mRenderTracker.clear(systemTime(CLOCK_MONOTONIC));
     mCodec->processDeferredMessages();
 }
@@ -7663,6 +7671,30 @@ sp<IOMXObserver> ACodec::createObserver() {
     return observer;
 }
 
+void ACodec::forceStateTransition(int generation) {
+    if (generation != mStateGeneration) {
+        ALOGV("Ignoring stale force state transition message: #%d (now #%d)",
+                generation, mStateGeneration);
+        return;
+    }
+    ALOGE("State machine stuck");
+    // Error must have already been signalled to the client.
+
+    // Deferred messages will be handled at LoadedState at the end of the
+    // transition.
+    mShutdownInProgress = true;
+    // No shutdown complete callback at the end of the transition.
+    mExplicitShutdown = false;
+    mKeepComponentAllocated = true;
+
+    status_t err = mOMXNode->sendCommand(OMX_CommandStateSet, OMX_StateIdle);
+    if (err != OK) {
+        // TODO: do some recovery here.
+    } else {
+        changeState(mExecutingToIdleState);
+    }
+}
+
 bool ACodec::ExecutingState::onOMXFrameRendered(int64_t mediaTimeUs, nsecs_t systemNano) {
     mCodec->onFrameRendered(mediaTimeUs, systemNano);
     return true;
@@ -7729,7 +7761,14 @@ bool ACodec::OutputPortSettingsChangedState::onMessageReceived(
 
     switch (msg->what()) {
         case kWhatFlush:
-        case kWhatShutdown:
+        case kWhatShutdown: {
+            if (mCodec->mFatalError) {
+                sp<AMessage> msg = new AMessage(ACodec::kWhatForceStateTransition, mCodec);
+                msg->setInt32("generation", mCodec->mStateGeneration);
+                msg->post(3000000);
+            }
+            // fall-through
+        }
         case kWhatResume:
         case kWhatSetParameters:
         {
@@ -7738,6 +7777,16 @@ bool ACodec::OutputPortSettingsChangedState::onMessageReceived(
             }
 
             mCodec->deferMessage(msg);
+            handled = true;
+            break;
+        }
+
+        case kWhatForceStateTransition:
+        {
+            int32_t generation = 0;
+            CHECK(msg->findInt32("generation", &generation));
+            mCodec->forceStateTransition(generation);
+
             handled = true;
             break;
         }
@@ -7801,15 +7850,7 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
 
                 if (err != OK) {
                     mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
-
-                    // This is technically not correct, but appears to be
-                    // the only way to free the component instance.
-                    // Controlled transitioning from excecuting->idle
-                    // and idle->loaded seem impossible probably because
-                    // the output port never finishes re-enabling.
-                    mCodec->mShutdownInProgress = true;
-                    mCodec->mKeepComponentAllocated = false;
-                    mCodec->changeState(mCodec->mLoadedState);
+                    ALOGE("Error occurred while disabling the output port");
                 }
 
                 return true;
@@ -7834,7 +7875,7 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
         }
 
         default:
-            return false;
+            return BaseState::onOMXEvent(event, data1, data2);
     }
 }
 
@@ -8036,12 +8077,27 @@ bool ACodec::FlushingState::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatShutdown:
         {
             mCodec->deferMessage(msg);
+            if (mCodec->mFatalError) {
+                sp<AMessage> msg = new AMessage(ACodec::kWhatForceStateTransition, mCodec);
+                msg->setInt32("generation", mCodec->mStateGeneration);
+                msg->post(3000000);
+            }
             break;
         }
 
         case kWhatFlush:
         {
             // We're already doing this right now.
+            handled = true;
+            break;
+        }
+
+        case kWhatForceStateTransition:
+        {
+            int32_t generation = 0;
+            CHECK(msg->findInt32("generation", &generation));
+            mCodec->forceStateTransition(generation);
+
             handled = true;
             break;
         }

@@ -30,11 +30,100 @@
 #define AAUDIO_AAUDIO_H
 
 #include <time.h>
-#include "AAudioDefinitions.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * This is used to represent a value that has not been specified.
+ * For example, an application could use AAUDIO_UNSPECIFIED to indicate
+ * that is did not not care what the specific value of a parameter was
+ * and would accept whatever it was given.
+ */
+#define AAUDIO_UNSPECIFIED           0
+#define AAUDIO_DEVICE_UNSPECIFIED    0
+
+enum {
+    AAUDIO_DIRECTION_OUTPUT,
+    AAUDIO_DIRECTION_INPUT
+};
+typedef int32_t aaudio_direction_t;
+
+enum {
+    AAUDIO_FORMAT_INVALID = -1,
+    AAUDIO_FORMAT_UNSPECIFIED = 0,
+    AAUDIO_FORMAT_PCM_I16,
+    AAUDIO_FORMAT_PCM_FLOAT
+};
+typedef int32_t aaudio_format_t;
+
+/**
+ * @deprecated use aaudio_format_t instead
+ * TODO remove when tests and examples are updated
+ */
+typedef int32_t aaudio_audio_format_t;
+
+enum {
+    AAUDIO_OK,
+    AAUDIO_ERROR_BASE = -900, // TODO review
+    AAUDIO_ERROR_DISCONNECTED,
+    AAUDIO_ERROR_ILLEGAL_ARGUMENT,
+    AAUDIO_ERROR_INCOMPATIBLE,
+    AAUDIO_ERROR_INTERNAL, // an underlying API returned an error code
+    AAUDIO_ERROR_INVALID_STATE,
+    AAUDIO_ERROR_UNEXPECTED_STATE,
+    AAUDIO_ERROR_UNEXPECTED_VALUE,
+    AAUDIO_ERROR_INVALID_HANDLE,
+    AAUDIO_ERROR_INVALID_QUERY,
+    AAUDIO_ERROR_UNIMPLEMENTED,
+    AAUDIO_ERROR_UNAVAILABLE,
+    AAUDIO_ERROR_NO_FREE_HANDLES,
+    AAUDIO_ERROR_NO_MEMORY,
+    AAUDIO_ERROR_NULL,
+    AAUDIO_ERROR_TIMEOUT,
+    AAUDIO_ERROR_WOULD_BLOCK,
+    AAUDIO_ERROR_INVALID_FORMAT,
+    AAUDIO_ERROR_OUT_OF_RANGE,
+    AAUDIO_ERROR_NO_SERVICE,
+    AAUDIO_ERROR_INVALID_RATE
+};
+typedef int32_t  aaudio_result_t;
+
+enum
+{
+    AAUDIO_STREAM_STATE_UNINITIALIZED = 0,
+    AAUDIO_STREAM_STATE_UNKNOWN,
+    AAUDIO_STREAM_STATE_OPEN,
+    AAUDIO_STREAM_STATE_STARTING,
+    AAUDIO_STREAM_STATE_STARTED,
+    AAUDIO_STREAM_STATE_PAUSING,
+    AAUDIO_STREAM_STATE_PAUSED,
+    AAUDIO_STREAM_STATE_FLUSHING,
+    AAUDIO_STREAM_STATE_FLUSHED,
+    AAUDIO_STREAM_STATE_STOPPING,
+    AAUDIO_STREAM_STATE_STOPPED,
+    AAUDIO_STREAM_STATE_CLOSING,
+    AAUDIO_STREAM_STATE_CLOSED,
+    AAUDIO_STREAM_STATE_DISCONNECTED
+};
+typedef int32_t aaudio_stream_state_t;
+
+
+enum {
+    /**
+     * This will be the only stream using a particular source or sink.
+     * This mode will provide the lowest possible latency.
+     * You should close EXCLUSIVE streams immediately when you are not using them.
+     */
+            AAUDIO_SHARING_MODE_EXCLUSIVE,
+    /**
+     * Multiple applications will be mixed by the AAudio Server.
+     * This will have higher latency than the EXCLUSIVE mode.
+     */
+            AAUDIO_SHARING_MODE_SHARED
+};
+typedef int32_t aaudio_sharing_mode_t;
 
 typedef struct AAudioStreamStruct         AAudioStream;
 typedef struct AAudioStreamBuilderStruct  AAudioStreamBuilder;
@@ -117,20 +206,28 @@ AAUDIO_API void AAudioStreamBuilder_setSampleRate(AAudioStreamBuilder* builder,
                                                        int32_t sampleRate);
 
 /**
- * Request a number of samples per frame.
+ * Request a number of channels for the stream.
  *
  * The stream may be opened with a different value.
  * So the application should query for the actual value after the stream is opened.
  *
  * The default, if you do not call this function, is AAUDIO_UNSPECIFIED.
  *
- * Note, this quantity is sometimes referred to as "channel count".
+ * Note, this quantity is sometimes referred to as "samples per frame".
  *
  * @param builder reference provided by AAudio_createStreamBuilder()
- * @param samplesPerFrame Number of samples in one frame, ie. numChannels.
+ * @param channelCount Number of channels desired.
  */
+AAUDIO_API void AAudioStreamBuilder_setChannelCount(AAudioStreamBuilder* builder,
+                                                   int32_t channelCount);
+
+/**
+ *
+ * @deprecated use AAudioStreamBuilder_setChannelCount()
+ */
+// TODO remove as soon as the NDK and OS are in sync, before RC1
 AAUDIO_API void AAudioStreamBuilder_setSamplesPerFrame(AAudioStreamBuilder* builder,
-                                                   int32_t samplesPerFrame);
+                                                       int32_t samplesPerFrame);
 
 /**
  * Request a sample data format, for example AAUDIO_FORMAT_PCM_I16.
@@ -253,7 +350,7 @@ typedef aaudio_data_callback_result_t (*AAudioStream_dataCallback)(
  * AAudioStream_requestStop() is called.
  *
  * This callback function will be called on a real-time thread owned by AAudio. See
- * {@link aaudio_data_callback_proc_t} for more information.
+ * {@link AAudioStream_dataCallback} for more information.
  *
  * Note that the AAudio callbacks will never be called simultaneously from multiple threads.
  *
@@ -415,7 +512,6 @@ AAUDIO_API aaudio_result_t  AAudioStream_requestStop(AAudioStream* stream);
  * set to AAUDIO_STREAM_STATE_UNKNOWN and a zero timeout.
  *
  * @param stream reference provided by AAudioStreamBuilder_openStream()
- * @param state pointer to a variable that will be set to the current state
  */
 AAUDIO_API aaudio_stream_state_t AAudioStream_getState(AAudioStream* stream);
 
@@ -494,60 +590,9 @@ AAUDIO_API aaudio_result_t AAudioStream_write(AAudioStream* stream,
                                int32_t numFrames,
                                int64_t timeoutNanoseconds);
 
-
-// ============================================================
-// High priority audio threads
-// ============================================================
-
-/**
- * @deprecated Use AudioStreamBuilder_setCallback()
- */
-typedef void *(*aaudio_audio_thread_proc_t)(void *);
-
-/**
- * @deprecated Use AudioStreamBuilder_setCallback()
- *
- * Create a thread associated with a stream. The thread has special properties for
- * low latency audio performance. This thread can be used to implement a callback API.
- *
- * Only one thread may be associated with a stream.
- *
- * If you are using multiple streams then we recommend that you only do
- * blocking reads or writes on one stream. You can do non-blocking I/O on the
- * other streams by setting the timeout to zero.
- * This thread should be created for the stream that you will block on.
- *
- * Note that this API is in flux.
- *
- * @param stream A stream created using AAudioStreamBuilder_openStream().
- * @param periodNanoseconds the estimated period at which the audio thread will need to wake up
- * @param threadProc your thread entry point
- * @param arg an argument that will be passed to your thread entry point
- * @return AAUDIO_OK or a negative error.
- */
-AAUDIO_API aaudio_result_t AAudioStream_createThread(AAudioStream* stream,
-                                     int64_t periodNanoseconds,
-                                     aaudio_audio_thread_proc_t threadProc,
-                                     void *arg);
-
-/**
- * @deprecated Use AudioStreamBuilder_setCallback()
- *
- * Wait until the thread exits or an error occurs.
- *
- * @param stream A stream created using AAudioStreamBuilder_openStream().
- * @param returnArg a pointer to a variable to receive the return value
- * @param timeoutNanoseconds Maximum number of nanoseconds to wait for completion.
- * @return AAUDIO_OK or a negative error.
- */
-AAUDIO_API aaudio_result_t AAudioStream_joinThread(AAudioStream* stream,
-                                   void **returnArg,
-                                   int64_t timeoutNanoseconds);
-
 // ============================================================
 // Stream - queries
 // ============================================================
-
 
 /**
  * This can be used to adjust the latency of the buffer by changing
@@ -640,8 +685,18 @@ AAUDIO_API int32_t AAudioStream_getXRunCount(AAudioStream* stream);
 AAUDIO_API int32_t AAudioStream_getSampleRate(AAudioStream* stream);
 
 /**
+ * A stream has one or more channels of data.
+ * A frame will contain one sample for each channel.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream()
+ * @return actual number of channels
+ */
+AAUDIO_API int32_t AAudioStream_getChannelCount(AAudioStream* stream);
+
+/**
  * The samplesPerFrame is also known as channelCount.
  *
+ * @deprecated use AAudioStream_getChannelCount()
  * @param stream reference provided by AAudioStreamBuilder_openStream()
  * @return actual samples per frame
  */

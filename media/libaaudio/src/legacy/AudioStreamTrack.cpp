@@ -22,7 +22,7 @@
 #include <media/AudioTrack.h>
 
 #include <aaudio/AAudio.h>
-#include "AudioClock.h"
+#include "utility/AudioClock.h"
 #include "legacy/AudioStreamLegacy.h"
 #include "legacy/AudioStreamTrack.h"
 #include "utility/FixedBlockReader.h"
@@ -32,6 +32,7 @@ using namespace aaudio;
 
 // Arbitrary and somewhat generous number of bursts.
 #define DEFAULT_BURSTS_PER_BUFFER_CAPACITY     8
+static const bool FAST_TRACKS_ENABLED = true;
 
 /*
  * Create a stream that uses the AudioTrack.
@@ -69,7 +70,9 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
             samplesPerFrame, channelMask);
 
     // TODO add more performance options
-    audio_output_flags_t flags = (audio_output_flags_t) AUDIO_OUTPUT_FLAG_FAST;
+    audio_output_flags_t flags = FAST_TRACKS_ENABLED
+                                 ? AUDIO_OUTPUT_FLAG_FAST
+                                 : AUDIO_OUTPUT_FLAG_NONE;
 
     int32_t frameCount = builder.getBufferCapacity();
     ALOGD("AudioStreamTrack::open(), requested buffer capacity %d", frameCount);
@@ -142,6 +145,7 @@ aaudio_result_t AudioStreamTrack::open(const AudioStreamBuilder& builder)
     }
 
     setState(AAUDIO_STREAM_STATE_OPEN);
+    setDeviceId(mAudioTrack->getRoutedDeviceId());
 
     return AAUDIO_OK;
 }
@@ -343,7 +347,7 @@ int32_t AudioStreamTrack::getXRunCount() const
 
 int32_t AudioStreamTrack::getFramesPerBurst() const
 {
-    return 192; // TODO add query to AudioTrack.cpp
+    return static_cast<int32_t>(mAudioTrack->getNotificationPeriodInFrames());
 }
 
 int64_t AudioStreamTrack::getFramesRead() {
