@@ -276,20 +276,6 @@ MediaPlayerService::MediaPlayerService()
     ALOGV("MediaPlayerService created");
     mNextConnId = 1;
 
-    mBatteryAudio.refCount = 0;
-    for (int i = 0; i < NUM_AUDIO_DEVICES; i++) {
-        mBatteryAudio.deviceOn[i] = 0;
-        mBatteryAudio.lastTime[i] = 0;
-        mBatteryAudio.totalTime[i] = 0;
-    }
-    // speaker is on by default
-    mBatteryAudio.deviceOn[SPEAKER] = 1;
-
-    // reset battery stats
-    // if the mediaserver has crashed, battery stats could be left
-    // in bad state, reset the state upon service start.
-    BatteryNotifier::getInstance().noteResetVideo();
-
     MediaPlayerFactory::registerBuiltinFactories();
 }
 
@@ -2049,7 +2035,7 @@ status_t MediaPlayerService::AudioOutput::open(
         // For now, we simply advance to the end of the VolumeShaper effect
         // if it has been started.
         if (shaper.isStarted()) {
-            operationToEnd->setXOffset(1.f);
+            operationToEnd->setNormalizedTime(1.f);
         }
         return t->applyVolumeShaper(shaper.mConfiguration, operationToEnd);
     });
@@ -2308,8 +2294,9 @@ VolumeShaper::Status MediaPlayerService::AudioOutput::applyVolumeShaper(
         status = mTrack->applyVolumeShaper(configuration, operation);
         if (status >= 0) {
             (void)mVolumeHandler->applyVolumeShaper(configuration, operation);
-            // TODO: start on exact AudioTrack state (STATE_ACTIVE || STATE_STOPPING)
-            mVolumeHandler->setStarted();
+            if (mTrack->isPlaying()) { // match local AudioTrack to properly restore.
+                mVolumeHandler->setStarted();
+            }
         }
     } else {
         status = mVolumeHandler->applyVolumeShaper(configuration, operation);
@@ -2492,7 +2479,31 @@ bool CallbackThread::threadLoop() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void MediaPlayerService::addBatteryData(uint32_t params)
+void MediaPlayerService::addBatteryData(uint32_t params) {
+    mBatteryTracker.addBatteryData(params);
+}
+
+status_t MediaPlayerService::pullBatteryData(Parcel* reply) {
+    return mBatteryTracker.pullBatteryData(reply);
+}
+
+MediaPlayerService::BatteryTracker::BatteryTracker() {
+    mBatteryAudio.refCount = 0;
+    for (int i = 0; i < NUM_AUDIO_DEVICES; i++) {
+        mBatteryAudio.deviceOn[i] = 0;
+        mBatteryAudio.lastTime[i] = 0;
+        mBatteryAudio.totalTime[i] = 0;
+    }
+    // speaker is on by default
+    mBatteryAudio.deviceOn[SPEAKER] = 1;
+
+    // reset battery stats
+    // if the mediaserver has crashed, battery stats could be left
+    // in bad state, reset the state upon service start.
+    BatteryNotifier::getInstance().noteResetVideo();
+}
+
+void MediaPlayerService::BatteryTracker::addBatteryData(uint32_t params)
 {
     Mutex::Autolock lock(mLock);
 
@@ -2632,7 +2643,7 @@ void MediaPlayerService::addBatteryData(uint32_t params)
     }
 }
 
-status_t MediaPlayerService::pullBatteryData(Parcel* reply) {
+status_t MediaPlayerService::BatteryTracker::pullBatteryData(Parcel* reply) {
     Mutex::Autolock lock(mLock);
 
     // audio output devices usage

@@ -835,6 +835,11 @@ status_t ACodec::setPortMode(int32_t portIndex, IOMX::PortMode mode) {
 }
 
 status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
+    if (portIndex == kPortIndexInputExtradata ||
+            portIndex == kPortIndexOutputExtradata) {
+        return OK;
+    }
+
     CHECK(portIndex == kPortIndexInput || portIndex == kPortIndexOutput);
 
     if (getTrebleFlag()) {
@@ -1069,6 +1074,34 @@ status_t ACodec::setupNativeWindowSizeFormatAndUsage(
         return err;
     }
 
+    OMX_INDEXTYPE index;
+    err = mOMXNode->getExtensionIndex(
+            "OMX.google.android.index.AndroidNativeBufferConsumerUsage",
+            &index);
+
+    if (err != OK) {
+        // allow failure
+        err = OK;
+    } else {
+        int usageBits = 0;
+        if (nativeWindow->query(
+                nativeWindow,
+                NATIVE_WINDOW_CONSUMER_USAGE_BITS,
+                &usageBits) == OK) {
+            OMX_PARAM_U32TYPE params;
+            InitOMXParams(&params);
+            params.nPortIndex = kPortIndexOutput;
+            params.nU32 = (OMX_U32)usageBits;
+
+            err = mOMXNode->setParameter(index, &params, sizeof(params));
+
+            if (err != OK) {
+                ALOGE("Fail to set AndroidNativeBufferConsumerUsage: %d", err);
+                return err;
+            }
+        }
+    }
+
     OMX_U32 usage = 0;
     err = mOMXNode->getGraphicBufferUsage(kPortIndexOutput, &usage);
     if (err != 0) {
@@ -1112,7 +1145,8 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
 
     if (err == OK) {
         err = setupNativeWindowSizeFormatAndUsage(
-                mNativeWindow.get(), &mNativeWindowUsageBits, preregister /* reconnect */);
+                mNativeWindow.get(), &mNativeWindowUsageBits,
+                preregister && !mTunneled /* reconnect */);
     }
     if (err != OK) {
         mNativeWindowUsageBits = 0;
@@ -1541,6 +1575,11 @@ ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
 }
 
 status_t ACodec::freeBuffersOnPort(OMX_U32 portIndex) {
+    if (portIndex == kPortIndexInputExtradata ||
+            portIndex == kPortIndexOutputExtradata) {
+        return OK;
+    }
+
     if (portIndex == kPortIndexInput) {
         mBufferChannel->setInputBufferArray({});
     } else {
@@ -5432,6 +5471,8 @@ bool ACodec::BaseState::onMessageReceived(const sp<AMessage> &msg) {
             ALOGE_IF("[%s] failed to release codec instance: err=%d",
                        mCodec->mComponentName.c_str(), err);
             mCodec->mCallback->onReleaseCompleted();
+
+            mCodec->changeState(mCodec->mUninitializedState);
             break;
         }
 
@@ -6785,6 +6826,9 @@ void ACodec::LoadedToIdleState::stateEntered() {
         if (mCodec->allYourBuffersAreBelongToUs(kPortIndexOutput)) {
             mCodec->freeBuffersOnPort(kPortIndexOutput);
         }
+        if (mCodec->allYourBuffersAreBelongToUs(kPortIndexOutputExtradata)) {
+            mCodec->freeBuffersOnPort(kPortIndexOutputExtradata);
+        }
 
         mCodec->changeState(mCodec->mLoadedState);
     }
@@ -6799,6 +6843,11 @@ status_t ACodec::LoadedToIdleState::allocateBuffers() {
     err = mCodec->allocateBuffersOnPort(kPortIndexOutput);
     if (err != OK) {
         return err;
+    }
+
+    err = mCodec->allocateBuffersOnPort(kPortIndexOutputExtradata);
+    if (err != OK) {
+        err = OK; // Ignore Extradata buffer allocation failure
     }
 
     mCodec->mCallback->onStartCompleted();
@@ -7963,6 +8012,11 @@ void ACodec::ExecutingToIdleState::changeStateIfWeOwnAllBuffers() {
             if (err == OK) {
                 err = err2;
             }
+            status_t err3 = mCodec->freeBuffersOnPort(kPortIndexOutputExtradata);
+            if (err == OK) {
+                err = err3;
+            }
+
         }
 
         if ((mCodec->mFlags & kFlagPushBlankBuffersToNativeWindowOnShutdown)

@@ -18,6 +18,7 @@
 //#define LOG_NDEBUG 0
 #include <utils/Log.h>
 
+#include <cutils/properties.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <utils/Errors.h>
@@ -48,7 +49,7 @@ int32_t AAudioConvert_formatToSizeInBytes(aaudio_audio_format_t format) {
 }
 
 
-// TODO call clamp16_from_float function in primitives.h
+// TODO expose and call clamp16_from_float function in primitives.h
 static inline int16_t clamp16_from_float(float f) {
     /* Offset is used to expand the valid range of [-1.0, 1.0) into the 16 lsbs of the
      * floating point significand. The normal shift is 3<<22, but the -15 offset
@@ -209,18 +210,32 @@ status_t AAudioConvert_aaudioToAndroidStatus(aaudio_result_t result) {
         status = DEAD_OBJECT;
         break;
     case AAUDIO_ERROR_INVALID_STATE:
+    case AAUDIO_ERROR_UNEXPECTED_STATE:
         status = INVALID_OPERATION;
         break;
-    case AAUDIO_ERROR_UNEXPECTED_VALUE: // TODO redundant?
+    case AAUDIO_ERROR_UNEXPECTED_VALUE:
     case AAUDIO_ERROR_INVALID_RATE:
     case AAUDIO_ERROR_INVALID_FORMAT:
     case AAUDIO_ERROR_ILLEGAL_ARGUMENT:
+    case AAUDIO_ERROR_OUT_OF_RANGE:
         status = BAD_VALUE;
         break;
     case AAUDIO_ERROR_WOULD_BLOCK:
         status = WOULD_BLOCK;
         break;
-    // TODO add more result codes
+    case AAUDIO_ERROR_NULL:
+        status = UNEXPECTED_NULL;
+        break;
+    // TODO translate these result codes
+    case AAUDIO_ERROR_INCOMPATIBLE:
+    case AAUDIO_ERROR_INTERNAL:
+    case AAUDIO_ERROR_INVALID_QUERY:
+    case AAUDIO_ERROR_UNIMPLEMENTED:
+    case AAUDIO_ERROR_UNAVAILABLE:
+    case AAUDIO_ERROR_NO_FREE_HANDLES:
+    case AAUDIO_ERROR_NO_MEMORY:
+    case AAUDIO_ERROR_TIMEOUT:
+    case AAUDIO_ERROR_NO_SERVICE:
     default:
         status = UNKNOWN_ERROR;
         break;
@@ -244,13 +259,15 @@ aaudio_result_t AAudioConvert_androidToAAudioResult(status_t status) {
     case INVALID_OPERATION:
         result = AAUDIO_ERROR_INVALID_STATE;
         break;
-    case BAD_VALUE:
-        result = AAUDIO_ERROR_UNEXPECTED_VALUE;
-        break;
+        case UNEXPECTED_NULL:
+            result = AAUDIO_ERROR_NULL;
+            break;
+        case BAD_VALUE:
+            result = AAUDIO_ERROR_UNEXPECTED_VALUE;
+            break;
     case WOULD_BLOCK:
         result = AAUDIO_ERROR_WOULD_BLOCK;
         break;
-    // TODO add more status codes
     default:
         result = AAUDIO_ERROR_INTERNAL;
         break;
@@ -305,4 +322,53 @@ int32_t AAudioConvert_framesToBytes(int32_t numFrames,
     }
     *sizeInBytes = numFrames * bytesPerFrame;
     return AAUDIO_OK;
+}
+
+static int32_t AAudioProperty_getMMapProperty(const char *propName,
+                                              int32_t defaultValue,
+                                              const char * caller) {
+    int32_t prop = property_get_int32(AAUDIO_PROP_MMAP_ENABLED, defaultValue);
+    switch (prop) {
+        case AAUDIO_USE_NEVER:
+        case AAUDIO_USE_ALWAYS:
+        case AAUDIO_USE_AUTO:
+            break;
+        default:
+            ALOGE("%s: invalid = %d", caller, prop);
+            prop = defaultValue;
+            break;
+    }
+    return prop;
+}
+
+int32_t AAudioProperty_getMMapEnabled() {
+    return AAudioProperty_getMMapProperty(AAUDIO_PROP_MMAP_ENABLED,
+                                          AAUDIO_USE_NEVER, __func__);
+}
+
+int32_t AAudioProperty_getMMapExclusiveEnabled() {
+    return AAudioProperty_getMMapProperty(AAUDIO_PROP_MMAP_EXCLUSIVE_ENABLED,
+                                          AAUDIO_USE_NEVER, __func__);
+}
+
+int32_t AAudioProperty_getMixerBursts() {
+    const int32_t defaultBursts = 2; // arbitrary
+    const int32_t maxBursts = 1024; // arbitrary
+    int32_t prop = property_get_int32(AAUDIO_PROP_MIXER_BURSTS, defaultBursts); // use 2 for double buffered
+    if (prop < 1 || prop > maxBursts) {
+        ALOGE("AAudioProperty_getMixerBursts: invalid = %d", prop);
+        prop = defaultBursts;
+    }
+    return prop;
+}
+
+int32_t AAudioProperty_getHardwareBurstMinMicros() {
+    const int32_t defaultMicros = 1000; // arbitrary
+    const int32_t maxMicros = 1000 * 1000; // arbitrary
+    int32_t prop = property_get_int32(AAUDIO_PROP_HW_BURST_MIN_USEC, defaultMicros);
+    if (prop < 1 || prop > maxMicros) {
+        ALOGE("AAudioProperty_getHardwareBurstMinMicros: invalid = %d", prop);
+        prop = defaultMicros;
+    }
+    return prop;
 }

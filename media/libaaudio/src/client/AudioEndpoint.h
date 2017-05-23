@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef AAUDIO_AUDIO_ENDPOINT_H
-#define AAUDIO_AUDIO_ENDPOINT_H
+#ifndef ANDROID_AAUDIO_AUDIO_ENDPOINT_H
+#define ANDROID_AAUDIO_AUDIO_ENDPOINT_H
 
 #include <aaudio/AAudio.h>
 
@@ -56,6 +56,9 @@ public:
 
     void getEmptyRoomAvailable(android::WrappingBuffer *wrappingBuffer);
 
+    int32_t getEmptyFramesAvailable();
+    int32_t getFullFramesAvailable();
+
     void advanceWriteIndex(int32_t deltaFrames);
 
     /**
@@ -81,8 +84,6 @@ public:
 
     int32_t getBufferCapacityInFrames() const;
 
-    int32_t getFullFramesAvailable();
-
 private:
     android::FifoBuffer    *mUpCommandQueue;
     android::FifoBuffer    *mDownDataQueue;
@@ -93,4 +94,4 @@ private:
 
 } // namespace aaudio
 
-#endif //AAUDIO_AUDIO_ENDPOINT_H
+#endif //ANDROID_AAUDIO_AUDIO_ENDPOINT_H
