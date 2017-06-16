@@ -48,6 +48,7 @@
 
 namespace android {
 
+extern char gClientPackageName[50];
 extern volatile int32_t gLogLevel;
 
 class MemoryHeapBase;
