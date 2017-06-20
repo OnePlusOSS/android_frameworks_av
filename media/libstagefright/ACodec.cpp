@@ -3240,6 +3240,7 @@ static const struct VideoCodingMapEntry {
     { MEDIA_MIMETYPE_VIDEO_AVC, OMX_VIDEO_CodingAVC },
     { MEDIA_MIMETYPE_VIDEO_HEVC, OMX_VIDEO_CodingHEVC },
     { MEDIA_MIMETYPE_VIDEO_MPEG4, OMX_VIDEO_CodingMPEG4 },
+    { MEDIA_MIMETYPE_VIDEO_MPEG4_DP, OMX_VIDEO_CodingMPEG4 },
     { MEDIA_MIMETYPE_VIDEO_H263, OMX_VIDEO_CodingH263 },
     { MEDIA_MIMETYPE_VIDEO_MPEG2, OMX_VIDEO_CodingMPEG2 },
     { MEDIA_MIMETYPE_VIDEO_VP8, OMX_VIDEO_CodingVP8 },
@@ -7889,6 +7890,11 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
                     err = mCodec->mOMXNode->sendCommand(
                             OMX_CommandPortEnable, kPortIndexOutput);
                 }
+
+                /* Clear the RenderQueue in which queued GraphicBuffers hold the
+                 * actual buffer references in order to free them early.
+                 */
+                mCodec->mRenderTracker.clear(systemTime(CLOCK_MONOTONIC));
 
                 if (err == OK) {
                     err = mCodec->allocateBuffersOnPort(kPortIndexOutput);

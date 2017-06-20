@@ -390,9 +390,11 @@ static VideoFrame *extractVideoFrame(
         }
     }
 
-    int32_t width, height;
+    int32_t width, height, stride, slice_height;
     CHECK(outputFormat->findInt32("width", &width));
     CHECK(outputFormat->findInt32("height", &height));
+    CHECK(outputFormat->findInt32("stride", &stride));
+    CHECK(outputFormat->findInt32("slice-height", &slice_height));
 
     int32_t crop_left, crop_top, crop_right, crop_bottom;
     if (!outputFormat->findRect("crop", &crop_left, &crop_top, &crop_right, &crop_bottom)) {
@@ -446,7 +448,7 @@ static VideoFrame *extractVideoFrame(
     if (converter.isValid()) {
         err = converter.convert(
                 (const uint8_t *)videoFrameBuffer->data(),
-                width, height,
+                stride, slice_height,
                 crop_left, crop_top, crop_right, crop_bottom,
                 frame->mData,
                 frame->mWidth,
@@ -500,6 +502,10 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     size_t i;
     for (i = 0; i < n; ++i) {
         sp<MetaData> meta = mExtractor->getTrackMetaData(i);
+
+        if (meta == NULL) {
+            continue;
+        }
 
         const char *mime;
         CHECK(meta->findCString(kKeyMIMEType, &mime));
@@ -694,6 +700,10 @@ void StagefrightMetadataRetriever::parseMetaData() {
     for (size_t i = 0; i < numTracks; ++i) {
         sp<MetaData> trackMeta = mExtractor->getTrackMetaData(i);
 
+        if (trackMeta == NULL) {
+            continue;
+        }
+
         int64_t durationUs;
         if (trackMeta->findInt64(kKeyDuration, &durationUs)) {
             if (durationUs > maxDurationUs) {
@@ -777,7 +787,8 @@ void StagefrightMetadataRetriever::parseMetaData() {
                 !strcasecmp(fileMIME, "video/x-matroska")) {
             sp<MetaData> trackMeta = mExtractor->getTrackMetaData(0);
             const char *trackMIME;
-            CHECK(trackMeta->findCString(kKeyMIMEType, &trackMIME));
+            CHECK(trackMeta != NULL
+                  && trackMeta->findCString(kKeyMIMEType, &trackMIME));
 
             if (!strncasecmp("audio/", trackMIME, 6)) {
                 // The matroska file only contains a single audio track,

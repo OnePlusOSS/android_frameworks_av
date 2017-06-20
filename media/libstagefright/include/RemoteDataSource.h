@@ -17,13 +17,19 @@
 #ifndef REMOTE_DATA_SOURCE_H_
 #define REMOTE_DATA_SOURCE_H_
 
+#ifndef TRACE_SUBMODULE
+#define TRACE_SUBMODULE VTRACE_SUBMODULE_EXTRACT
+#endif
+
 #include <binder/IMemory.h>
 #include <binder/MemoryDealer.h>
 #include <media/IDataSource.h>
 #include <media/stagefright/DataSource.h>
+#include <media/stagefright/foundation/ADebug.h>
 
 namespace android {
 
+#define __CLASS__ "RemoteDataSource"
 // Originally in MediaExtractor.cpp
 class RemoteDataSource : public BnDataSource {
 public:
@@ -44,6 +50,7 @@ public:
         return mMemory;
     }
     virtual ssize_t readAt(off64_t offset, size_t size) {
+        VTRACE_METHOD();
         ALOGV("readAt(%lld, %zu)", (long long)offset, size);
         if (size > kBufferSize) {
             size = kBufferSize;
@@ -51,9 +58,13 @@ public:
         return mSource->readAt(offset, mMemory->pointer(), size);
     }
     virtual status_t getSize(off64_t *size) {
+        VTRACE_METHOD();
         return mSource->getSize(size);
     }
     virtual void close() {
+        // Protect strong pointer assignments. This also can be called from the binder
+        // clean-up procedure which is running on a separate thread.
+        Mutex::Autolock lock(mCloseLock);
         mSource = nullptr;
         mMemory = nullptr;
     }
@@ -75,6 +86,7 @@ private:
     sp<IMemory> mMemory;
     sp<DataSource> mSource;
     String8 mName;
+    Mutex mCloseLock;
 
     explicit RemoteDataSource(const sp<DataSource> &source) {
         mSource = source;
@@ -88,6 +100,7 @@ private:
 
     DISALLOW_EVIL_CONSTRUCTORS(RemoteDataSource);
 };
+#undef __CLASS__ // RemoteDataSource
 
 }  // namespace android
 

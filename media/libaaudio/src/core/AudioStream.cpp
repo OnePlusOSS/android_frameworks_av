@@ -43,7 +43,6 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
     mSampleRate = builder.getSampleRate();
     mDeviceId = builder.getDeviceId();
     mFormat = builder.getFormat();
-    mDirection = builder.getDirection();
     mSharingMode = builder.getSharingMode();
     mSharingModeMatchRequired = builder.isSharingModeMatchRequired();
 
@@ -56,9 +55,12 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
     mDataCallbackUserData = builder.getDataCallbackUserData();
     mErrorCallbackUserData = builder.getErrorCallbackUserData();
 
-    // This is very helpful for debugging in the future.
-    ALOGI("AudioStream.open(): rate = %d, channels = %d, format = %d, sharing = %d",
-          mSampleRate, mSamplesPerFrame, mFormat, mSharingMode);
+    // This is very helpful for debugging in the future. Please leave it in.
+    ALOGI("AudioStream::open() rate = %d, channels = %d, format = %d, sharing = %d, dir = %s",
+          mSampleRate, mSamplesPerFrame, mFormat, mSharingMode,
+          (getDirection() == AAUDIO_DIRECTION_OUTPUT) ? "OUTPUT" : "INPUT");
+    ALOGI("AudioStream::open() device = %d, perfMode = %d, callbackFrames = %d",
+          mDeviceId, mPerformanceMode, mFramesPerDataCallback);
 
     // Check for values that are ridiculously out of range to prevent math overflow exploits.
     // The service will do a better check.
@@ -82,10 +84,6 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
         ALOGE("AudioStream::open(): mSampleRate out of range = %d", mSampleRate);
         return AAUDIO_ERROR_INVALID_RATE;
     }
-    if (mDirection != AAUDIO_DIRECTION_INPUT && mDirection != AAUDIO_DIRECTION_OUTPUT) {
-        ALOGE("AudioStream::open(): illegal direction %d", mDirection);
-        return AAUDIO_ERROR_UNEXPECTED_VALUE;
-    }
 
     switch(mPerformanceMode) {
         case AAUDIO_PERFORMANCE_MODE_NONE:
@@ -94,7 +92,7 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
             break;
         default:
             ALOGE("AudioStream::open(): illegal performanceMode %d", mPerformanceMode);
-            return AAUDIO_ERROR_UNEXPECTED_VALUE;
+            return AAUDIO_ERROR_ILLEGAL_ARGUMENT;
     }
 
     return AAUDIO_OK;

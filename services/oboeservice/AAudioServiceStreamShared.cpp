@@ -59,11 +59,10 @@ aaudio_result_t AAudioServiceStreamShared::open(const aaudio::AAudioStreamReques
     int32_t deviceId = configurationInput.getDeviceId();
     aaudio_direction_t direction = request.getDirection();
 
-    ALOGD("AAudioServiceStreamShared::open(), direction = %d", direction);
     AAudioEndpointManager &mEndpointManager = AAudioEndpointManager::getInstance();
     mServiceEndpoint = mEndpointManager.openEndpoint(mAudioService, deviceId, direction);
-    ALOGD("AAudioServiceStreamShared::open(), mServiceEndPoint = %p", mServiceEndpoint);
     if (mServiceEndpoint == nullptr) {
+        ALOGE("AAudioServiceStreamShared::open(), mServiceEndPoint = %p", mServiceEndpoint);
         return AAUDIO_ERROR_UNAVAILABLE;
     }
 
@@ -77,7 +76,7 @@ aaudio_result_t AAudioServiceStreamShared::open(const aaudio::AAudioStreamReques
     }
 
     mSampleRate = configurationInput.getSampleRate();
-    if (mSampleRate == AAUDIO_FORMAT_UNSPECIFIED) {
+    if (mSampleRate == AAUDIO_UNSPECIFIED) {
         mSampleRate = mServiceEndpoint->getSampleRate();
     } else if (mSampleRate != mServiceEndpoint->getSampleRate()) {
         ALOGE("AAudioServiceStreamShared::open(), mAudioFormat = %d, need %d",
@@ -86,7 +85,7 @@ aaudio_result_t AAudioServiceStreamShared::open(const aaudio::AAudioStreamReques
     }
 
     mSamplesPerFrame = configurationInput.getSamplesPerFrame();
-    if (mSamplesPerFrame == AAUDIO_FORMAT_UNSPECIFIED) {
+    if (mSamplesPerFrame == AAUDIO_UNSPECIFIED) {
         mSamplesPerFrame = mServiceEndpoint->getSamplesPerFrame();
     } else if (mSamplesPerFrame != mServiceEndpoint->getSamplesPerFrame()) {
         ALOGE("AAudioServiceStreamShared::open(), mSamplesPerFrame = %d, need %d",
@@ -134,7 +133,7 @@ aaudio_result_t AAudioServiceStreamShared::start()  {
     if (endpoint == nullptr) {
         return AAUDIO_ERROR_INVALID_STATE;
     }
-    // Add this stream to the mixer.
+    // For output streams, this will add the stream to the mixer.
     aaudio_result_t result = endpoint->startStream(this);
     if (result != AAUDIO_OK) {
         ALOGE("AAudioServiceStreamShared::start() mServiceEndpoint returned %d", result);
