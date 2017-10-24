@@ -84,6 +84,7 @@ const char CameraParameters::KEY_FOCUS_DISTANCES[] = "focus-distances";
 const char CameraParameters::KEY_VIDEO_FRAME_FORMAT[] = "video-frame-format";
 const char CameraParameters::KEY_VIDEO_SIZE[] = "video-size";
 const char CameraParameters::KEY_SUPPORTED_VIDEO_SIZES[] = "video-size-values";
+const char CameraParameters::KEY_SUPPORTED_VIDEO_SIZES_60FPS[] = "support-60fps-video-sizes";
 const char CameraParameters::KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO[] = "preferred-preview-size-for-video";
 const char CameraParameters::KEY_MAX_NUM_DETECTED_FACES_HW[] = "max-num-detected-faces-hw";
 const char CameraParameters::KEY_MAX_NUM_DETECTED_FACES_SW[] = "max-num-detected-faces-sw";
@@ -172,6 +173,8 @@ const char CameraParameters::FOCUS_MODE_CONTINUOUS_PICTURE[] = "continuous-pictu
 // Values for light fx settings
 const char CameraParameters::LIGHTFX_LOWLIGHT[] = "low-light";
 const char CameraParameters::LIGHTFX_HDR[] = "high-dynamic-range";
+
+const char CameraParameters::CLIENT_PACKAGE_NAME[] = "client-package-name";
 
 CameraParameters::CameraParameters()
                 : mMap()

@@ -456,6 +456,9 @@ public:
     // Example: "176x144,1280x720". Read only.
     static const char KEY_SUPPORTED_VIDEO_SIZES[];
 
+    static const char KEY_SUPPORTED_VIDEO_SIZES_60FPS[];
+    static const char CLIENT_PACKAGE_NAME[];
+
     // The maximum number of detected faces supported by hardware face
     // detection. If the value is 0, hardware face detection is not supported.
     // Example: "5". Read only
