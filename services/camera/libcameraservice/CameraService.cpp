@@ -75,6 +75,9 @@ using namespace hardware;
 // Use "adb shell dumpsys media.camera -v 1" to change it.
 volatile int32_t gLogLevel = 0;
 
+char gClientPackageName[50] = {'0'};
+char lClientPackageName[50] = {'0'};
+
 #define LOG1(...) ALOGD_IF(gLogLevel >= 1, __VA_ARGS__);
 #define LOG2(...) ALOGD_IF(gLogLevel >= 2, __VA_ARGS__);
 
